@@ -99,6 +99,64 @@ button:active,.sc:active,.card[data-a]:active{transform:scale(.97)}
 </div>
 <div id="app"></div>
 <script>
+const CLIENT_ID = "446473514795-8ce2s23l6ooelkev1bspdunla9ndcn97.apps.googleusercontent.com";
+const SCOPE = "https://www.googleapis.com/auth/drive.appdata openid email profile";
+const NOME_ARQUIVO = "backup-financas.json";
+
+let token = null;
+let perfil = null;
+
+function entrarComGoogle() {
+  return new Promise((ok, erro) => {
+    const cliente = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPE,
+      callback: async (r) => {
+        if (r.error) return erro(r);
+        token = r.access_token;
+        const resp = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: "Bearer " + token },
+        });
+        perfil = await resp.json();
+        ok(perfil);
+      },
+    });
+    cliente.requestAccessToken();
+  });
+}
+
+const auth = () => ({ Authorization: "Bearer " + token });
+
+async function acharArquivo() {
+  const q = encodeURIComponent(`name='${NOME_ARQUIVO}'`);
+  const r = await fetch(
+    `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id)`,
+    { headers: auth() }
+  );
+  const j = await r.json();
+  return j.files && j.files[0] ? j.files[0].id : null;
+}
+
+async function salvarBackup(dados) {
+  const id = await acharArquivo();
+  const meta = { name: NOME_ARQUIVO, ...(id ? {} : { parents: ["appDataFolder"] }) };
+  const form = new FormData();
+  form.append("metadata", new Blob([JSON.stringify(meta)], { type: "application/json" }));
+  form.append("file", new Blob([JSON.stringify(dados)], { type: "application/json" }));
+  const url = `https://www.googleapis.com/upload/drive/v3/files${id ? "/" + id : ""}?uploadType=multipart`;
+  const r = await fetch(url, { method: id ? "PATCH" : "POST", headers: auth(), body: form });
+  if (!r.ok) throw new Error("Falha ao salvar o backup");
+}
+
+async function lerBackup() {
+  const id = await acharArquivo();
+  if (!id) return null;
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+    headers: auth(),
+  });
+  return r.json();
+}
+
 const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const brl=v=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -125,7 +183,7 @@ const seed=()=>({contas:[{id:1,nome:"Conta Corrente",ini:1500},{id:2,nome:"Carte
  objs:[{id:1,nome:"Viagem de férias",ic:"✈️",alvo:6000,prazo:off(150),mov:[{id:1,data:off(-30),v:1500,op:"add"},{id:2,data:off(-5),v:500,op:"add"}]}],
  veic:[{id:1,nome:"Moto exemplo",modelo:"125 cc",vt:"Moto",km0:5000,placa:""}],
  vlanc:[{id:1,veic:1,t:"abast",data:off(-80),km:5000,comb:"Gasolina comum",preco:6,litros:6,total:36,completo:true,posto:"Posto Central"},{id:2,veic:1,t:"abast",data:off(-55),km:5230,comb:"Gasolina comum",preco:6.1,litros:6.1,total:37.21,completo:true,posto:"Posto Central"},{id:3,veic:1,t:"manut",data:off(-45),km:5300,tipoS:"Troca de óleo",itens:[{d:"Óleo do motor",v:60},{d:"Filtro",v:25}],total:85,local:"Oficina do Zé"},{id:4,veic:1,t:"abast",data:off(-30),km:5460,comb:"Gasolina comum",preco:6.2,litros:5.9,total:36.58,completo:true,posto:"Posto Bairro"},{id:5,veic:1,t:"abast",data:off(-10),km:5690,comb:"Gasolina comum",preco:6.3,litros:6,total:37.8,completo:true,posto:"Posto Central"}],
- vlemb:[{id:1,veic:1,nome:"Troca de óleo",km:3000,meses:6,ukm:5300,udata:off(-45)}]});
+ vlemp:[{id:1,veic:1,nome:"Troca de óleo",km:3000,meses:6,ukm:5300,udata:off(-45)}]});
 let db;try{db=JSON.parse(localStorage.getItem("fin-proto"))}catch{}db=db||seed();db.cats=db.cats||JSON.parse(JSON.stringify(DEFCATS));db.tags=db.tags||[];db.invs=db.invs||[];db.planos=db.planos||[];db.objs=db.objs||[];db.cfg=db.cfg||{};db.cfg.home=db.cfg.home||{};db.cfg.lembrete=db.cfg.lembrete||{on:false,h:"20:00"};if(!db.cats.Investimentos)db.cats.Investimentos=["📈","#2e86de"];let CATS=db.cats;
 const save=()=>{try{localStorage.setItem("fin-proto",JSON.stringify(db))}catch{}};
 const nowM=iso(new Date()).slice(0,7);
@@ -171,12 +229,12 @@ function trans(){const m=doMes(),rec=soma(m.filter(l=>l.tipo==="receita")),des=s
   return h+`<div class="li row" data-a="toggle" data-id="${l.id}">${icone(l.cat)}<div class="t"><b>${esc(l.desc)}</b><span class="mut">${sub}</span></div><div style="text-align:right"><div class="${l.tipo==="receita"?"rc":l.tipo==="transf"||l.tipo==="inv"?"":"ds"}">${brl(l.valor)}</div><span class="mut">${l.fixa?ico("repeat",14)+" ":""}${l.tipo==="cartao"?ico("card",14)+" ":""}${l.pago?`<span class="rc">${ico("check",14)}</span>`:ico("clock",14)}</span></div></div>`}).join("");
  return`<div class="row sp"><h2 style="margin:0;color:var(--tx);font-size:1.2rem">Transações</h2><div><button class="ib" data-a="showB">${ico("search",22)}</button><button class="ib" data-a="showF">${ico("filter",22)}</button></div></div>
  ${ui.showB?`<input id="q" placeholder="Buscar (ex.: pao, mercado, uber)" value="${esc(ui.busca)}" style="margin-top:8px">`:""}
- ${ui.showF?`<div class="card" style="margin-top:8px"><div class="row"><select id="ft"><option value="">Todos os tipos</option>${[["despesa","Despesa"],["receita","Receita"],["cartao","Cartão"],["transf","Transferência"],["inv","Investimento"]].map(([v,n])=>`<option value="${v}" ${ui.f.tipo===v?"selected":""}>${n}</option>`).join("")}</select><select id="fs"><option value="">Pago e pendente</option><option value="pago" ${ui.f.sit==="pago"?"selected":""}>Pago</option><option value="pendente" ${ui.f.sit==="pendente"?"selected":""}>Pendente</option></select></div><select id="fc" style="margin-top:8px"><option value="">Todas as categorias</option>${Object.keys(CATS).map(c=>`<option ${ui.f.cat===c?"selected":""}>${c}</option>`).join("")}</select>${db.tags.length?`<select id="ft2" style="margin-top:8px"><option value="">Todas as tags</option>${db.tags.map(t=>`<option ${ui.f.tag===t?"selected":""}>${esc(t)}</option>`).join("")}</select>`:""}</div>`:""}
+ ${ui.showF?`<div class="card" style="margin-top:8px"><div class="row"><select id="ft"><option value="">Todos os tipos</option>${[["despesa","Despesa"],["receita","Receita"],["cartao","Cartão"],["transf","Transferência"],["inv","Investimento"]].map(([v,n])=>`<option value="${v}" ${ui.f.tipo===v?"selected":""}>${n}</option>`).join("")}</select><select id="fs"><option value="">Pago e pendente</option><option value="pago" ${ui.f.sit==="pago"?"selected":""}>Pago</option><option value="pendente" ${ui.f.sit==="pendente"?"selected":""}>Pendente</option></select></div><select id="fc" style="margin-top:8px"><option value="">Todas as categorias</option>${Object.keys(CATS).map(c=>`<option ${ui.f.cat===c?"selected":""}>${c}</option>`).join("")}</select>${db.tags.length?`<select id="ft2" style="margin-top:8px"><option value="">Todas as tags</option>${db.tags.map(t=>`<option ${ui.f.tag===t?"selected":""}>${esc(t)}</option>`).join("")}`:""}</div>`:""}
  <div class="nav"><button class="ib" data-a="mes" data-n="-1">‹</button><b>${MES(ui.mes)}</b><button class="ib" data-a="mes" data-n="1">›</button></div>
  <div class="card row sp"><div><span class="mut">Saldo atual</span><div><b class="${atual<0?"ds":""}">${brl(atual)}</b></div></div><div style="text-align:right"><span class="mut">Balanço mensal</span><div><b class="${rec-des<0?"ds":"rc"}">${brl(rec-des)}</b></div></div></div>
  <div>${rows||'<p class="mut" style="text-align:center">Nenhuma transação encontrada.</p>'}</div><p class="mut" style="text-align:center">Toque numa transação para ver as opções (pago, apagar).</p>`}
 const MAIS={Gerenciar:[["bank","Contas","contas"],["card","Cartão de crédito","cartoes"],["link","Open Finance","openf"],["camera","Escanear cupom","scan"],["bookmark","Categorias","cats"],["tag","Tags","tags"],["pie","Investimentos","inv"],["target","Objetivos","obj"],["car","Veículos","veic"],["upload","Importar dados","imp"],["download","Exportar relatório","exp"],["grid","Cards da tela inicial","cardsh"],["calc","Calculadoras","calc"],["plane","Modo viagem","viag"],["bell","Lembrete diário","lemb"],["clock","Horas de vida","hvida"],["search","Auditar fixos","audit"],["trash","Apagar dados","reset"]],Geral:[["bars","Gráficos","graf"],["trend","Meu Desempenho","desemp"],["scale","Balanço mensal","bal"],["calendar","Calendário","cal"]],Sobre:[["share","Convide seus amigos","convite"],["star","Avaliar agora","aval"],["shield","Termos de Uso","termos"],["help","Central de ajuda","ajuda"],["info","Sobre","sobre"]]};
-function mais(){return`<div class="row sp"><h2 style="color:var(--tx);font-size:1.2rem;margin:4px 0">Mais opções</h2><div><button class="ib" data-a="gerir" data-k="conf">${ico("settings",22)}</button><button class="ib" data-a="gerir" data-k="ajuda">${ico("help",22)}</button></div></div>${db.perfil&&db.perfil.nome?`<div class="mut" style="margin-bottom:8px">Olá, ${esc(db.perfil.nome)} 👋</div>`:""}<div class="row" style="margin-bottom:10px">${Object.keys(MAIS).map(t=>`<button class="pill ${ui.maisTab===t?"on":""}" data-a="mt" data-t="${t}">${t}</button>`).join("")}</div><div class="card">${MAIS[ui.maisTab].map(([i,x,k])=>`<div class="li row sp" data-a="${k==="reset"?"reset":"gerir"}" data-k="${k}" style="cursor:pointer"><span class="row" style="gap:12px;color:${k==="reset"?"var(--dst)":"inherit"}">${ico(i,20)}${x}</span><span class="mut">›</span></div>`).join("")}</div>`}
+function mais(){return`<div class="row sp"><h2 style="color:var(--tx);font-size:1.2rem;margin:4px 0">Mais opções</h2><div><button class="ib" data-a="gerir" data-k="conf">${ico("settings",22)}</button><button class="ib" data-a="gerir" data-k="ajuda">${ico("help",22)}</button></div></div>${db.perfil&&db.perfil.nome?`<div class="card row sp" style="margin-bottom:10px"><div><div class="mut">Conta Google conectada</div><b>${esc(db.perfil.email||db.perfil.nome)}</b></div><button class="pill" data-a="logout" style="background:var(--db);color:#fff">Sair</button></div>`:""}<div class="row" style="margin-bottom:10px">${Object.keys(MAIS).map(t=>`<button class="pill ${ui.maisTab===t?"on":""}" data-a="mt" data-t="${t}">${t}</button>`).join("")}</div><div class="card">${MAIS[ui.maisTab].map(([i,x,k])=>`<div class="li row sp" data-a="${k==="reset"?"reset":"gerir"}" data-k="${k}" style="cursor:pointer"><span class="row" style="gap:12px;color:${k==="reset"?"var(--dst)":"inherit"}">${ico(i,20)}${x}</span><span class="mut">›</span></div>`).join("")}</div>`}
 const navM=()=>`<div class="nav"><button class="ib" data-a="mes" data-n="-1">‹</button><b>${MES(ui.mes)}</b><button class="ib" data-a="mes" data-n="1">›</button></div>`;
 function grafHTML(){const f=ui.form,r=f.gt==="r",m=doMes().filter(l=>r?l.tipo==="receita":isDesp(l)),g={};m.forEach(l=>g[l.cat]=(g[l.cat]||0)+l.valor);const ent=Object.entries(g).sort((a,b)=>b[1]-a[1]),tot=soma(m)||1,cor=n=>(CATS[n]||[0,"#7f8c8d"])[1];let ac=0;
  const grad=ent.map(([n,v])=>{const a=ac/tot*100;ac+=v;return`${cor(n)} ${a}% ${ac/tot*100}%`}).join(",");
@@ -223,7 +281,7 @@ function detHTML(){const f=ui.form,l=db.lanc.find(x=>x.id===f.id);if(!l)return""
  <button class="btn" data-a="ddel" data-m="1" style="background:var(--db)">APAGAR SÓ ESTE</button>
  ${g.length>1?`<button class="btn" data-a="ddel" data-m="n" style="background:var(--db)">APAGAR ESTE E OS PRÓXIMOS (${g.length-pos})</button><button class="btn" data-a="ddel" data-m="a" style="background:var(--db)">APAGAR TODA A SÉRIE (${g.length})</button>`:""}</div>`}
 const cp=v=>v>=1000?(v/1000).toFixed(1).replace(".",",")+"k":String(Math.round(v));
-function resumo(fn){const a=db.lanc.filter(fn);return{r:soma(a.filter(l=>l.tipo==="receita")),d:soma(a.filter(isDesp))}}
+const resumo=fn=>{const a=db.lanc.filter(fn);return{r:soma(a.filter(l=>l.tipo==="receita")),d:soma(a.filter(isDesp))}}
 function perHTML(){const f=ui.form,anos=db.lanc.map(l=>+l.data.slice(0,4)),cy=+nowM.slice(0,4),y0=Math.min(cy-1,...anos),y1=Math.max(cy+1,...anos);
  const hd=`<div class="row"><button class="ib" data-a="close">${ico("back",22)}</button><b>Escolher período</b></div><div class="row" style="margin:12px 0"><button class="pill ${f.modo==="m"?"on":""}" data-a="pmode" data-m="m">Mensal</button><button class="pill ${f.modo==="a"?"on":""}" data-a="pmode" data-m="a">Anual</button></div>`;
  if(f.modo==="a"){let ls="";for(let y=y1;y>=y0;y--){const s=resumo(l=>l.data.slice(0,4)==y);ls+=`<div class="card" data-a="pyear" data-y="${y}" style="cursor:pointer"><div class="row sp"><b>${y}${y===cy?" (atual)":""}</b><b class="${s.r-s.d<0?"ds":"rc"}">${brl(s.r-s.d)}</b></div><div class="row sp mut"><span class="rc">▲ ${brl(s.r)}</span><span class="ds">▼ ${brl(s.d)}</span></div></div>`}
@@ -351,4 +409,56 @@ function planosCard(){const L=db.planos||[],btn=`<button class="btn" data-a="pne
  return`<div class="card">${L.map(x=>planoRow(x,true)).join("")}${btn}</div>`}
 function homePlanos(){const L=db.planos||[];return L.length?`<h2>Planos personalizados</h2><div class="card">${L.map(x=>planoRow(x,false)).join("")}</div>`:""}
 function homeMetas(){const L=db.objs||[];return L.length?`<h2>Metas e objetivos</h2>${L.slice(0,3).map(objItem).join("")}${L.length>3?`<button class="pill" data-a="gerir" data-k="obj">Ver todos (${L.length})</button>`:""}`:""}
-function grabP(){const f=ui.form,g=id=>{const e=document.getElementById(id);return e?e
+function grabP(){const f=ui.form,g=id=>{const e=document.getElementById(id);return e?e.value:undefined};return {desc:g("pdesc"),val:g("pval")};}
+
+// --- Funções de Renderização e Eventos Globais ---
+function render(){
+  const app = $("#app");
+  if(!app) return;
+  if(ui.tab === "home") app.innerHTML = home();
+  else if(ui.tab === "trans") app.innerHTML = trans();
+  else if(ui.tab === "mais") app.innerHTML = mais();
+  
+  // Renderiza barra inferior de navegação se necessário
+}
+
+document.addEventListener("click", async (e)=>{
+  const el = e.target.closest("[data-a]");
+  if(!el) return;
+  const a = el.getAttribute("data-a");
+  
+  if(a === "wgoogle") {
+    (async () => {
+      try {
+        const perfilGoogle = await entrarComGoogle();
+        db.perfil = { nome: perfilGoogle.name, email: perfilGoogle.email, picture: perfilGoogle.picture, modo: "google" };
+        try { 
+          const backupDrive = await lerBackup(); 
+          if(backupDrive) db = backupDrive; 
+        } catch(e) {}
+        save();
+        ui.tab = "home";
+        render();
+      } catch(err) {
+        console.log(err);
+      }
+    })();
+  } else if(a === "logout") {
+    token = null;
+    perfil = null;
+    db.perfil = null;
+    save();
+    render();
+  }
+});
+
+window.addEventListener("load", ()=>{
+  setTimeout(()=>{
+    const sp = $("#splash");
+    if(sp) sp.classList.add("hide");
+  }, 400);
+  render();
+});
+</script>
+</body>
+</html>
