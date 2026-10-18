@@ -21,7 +21,7 @@
  *  dentro do Drive de CADA conta. Ninguém vê o backup de outra pessoa.
  */
 
-const CLIENT_ID = "COLE_AQUI_SEU_ID_DO_CLIENTE.apps.googleusercontent.com";
+const CLIENT_ID = "446473514795-8ce2s23l6ooelkev1bspdunla9ndcn97.apps.googleusercontent.com";
 const SCOPE = "https://www.googleapis.com/auth/drive.appdata openid email profile";
 const NOME_ARQUIVO = "backup-financas.json";
 
