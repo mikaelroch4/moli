@@ -735,7 +735,19 @@ document.addEventListener("click",e=>{if(!ui.form&&e.target.closest(".nav b")){u
  else if(a==="oadd"){const v=num($("#ov").value);if(v<=0)return toast("Informe um valor");const o=db.objs.find(x=>x.id===f.id);o.mov=o.mov||[];const antes=objGuardado(o);o.mov.push({id:Date.now()*1000+Math.floor(Math.random()*1000),data:off(0),v,op:el.dataset.op});save();if(el.dataset.op==="add"&&antes<o.alvo&&objGuardado(o)>=o.alvo)celebrar();else toast(el.dataset.op==="ret"?"Retirada registrada":"Valor guardado!")}
  else if(a==="omdel"){const o=db.objs.find(x=>x.id===f.id);o.mov=o.mov.filter(m=>m.id!==+el.dataset.id);save()}
  else if(a==="odel"){db.objs=db.objs.filter(x=>x.id!==f.id);save();ui.form={tipo:"gerir",k:"obj"};toast("Objetivo apagado")}
- else if(a==="wgoogle")ui.wmsg=true
+ else if(a==="wgoogle") {
+  entrarComGoogle().then(perfil => {
+db.perfil = { nome: perfil.name, email: perfil.email, picture: perfil.picture, modo: "google" };
+try { const backupDrive = await lerBackup(); if(backupDrive) db = backupDrive; } catch(e) {}
+save();
+    ui.tab = "home";
+    toast("Login efetuado com sucesso!");
+    render();
+  }).catch(err => {
+    console.log(err);
+    toast("Erro ao entrar com o Google");
+  });
+}
  else if(a==="wzero"){const n=($("#wn").value||"").trim();resetData(["lanc","contas","cartoes","invs","objs","planos","plan","tags"]);db.perfil={nome:n,modo:"local"};ui.tab="home";save()}
  else if(a==="wdemo"){db.perfil={nome:($("#wn").value||"").trim(),modo:"local"};ui.tab="home";save()}
  else if(a==="rsel"){f.sel=f.sel||{};f.sel[el.dataset.k]=!f.sel[el.dataset.k]}
